@@ -1,13 +1,12 @@
 #include <libusb-1.0/libusb.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <alloca.h>
 #include <inttypes.h>
 #include <string.h>
 #include <stdbool.h>
-#include <stdarg.h>
 #include "die.h"
 #include "debug.h"
+#include "usb.h"
 
 #define VENDOR	0x067b
 #define PRODUCT	0x2303
@@ -29,97 +28,6 @@
 #define SET_WINDEX_OFF		0x20
 #define SET_WLENGTH		0x01
 #define SET_TIMEOUT		USB_TIMEOUT
-
-/**
- * Enumerates usb devices looking for bus and addr.
- * @param ctx The libusb context
- * @param bus The bus the devis on
- * @param addr The address  on that bus
- * @returns pointer to device or NULL if not found.
- */
-libusb_device *find_dev_by_bus_addr(libusb_context *ctx, uint8_t bus, uint8_t addr)
-{
-	libusb_device ** devices;
-	libusb_device ** dev_ptr;
-	ssize_t num_devices = 0;
-
-	if((num_devices = libusb_get_device_list(ctx, &devices))<0)
-		die_usb(num_devices, "Unable to enumerate devices");
-	/* libusb_get_device_list's last entry is null according to docs */
-	for(dev_ptr = devices; *dev_ptr; dev_ptr++)
-	{
-		if(libusb_get_bus_number(*dev_ptr) == bus && libusb_get_device_address(*dev_ptr) == addr)
-		{
-			libusb_ref_device(*dev_ptr);
-			break;
-		}
-	}
-	/* we've added an extra ref so our's won't be freed */
-	libusb_free_device_list(devices, true);
-	/* If last entry in list is NULL, not finding it will return
-	 * NULL here. */
-	return *dev_ptr;
-}
-
-/**
- * Enumerates usb devices and returns matches.
- * @param ctx The libusb context
- * @param vendor The vendor to look for
- * @param product The product to look for
- * @param num_devs_found If not NULL, pointer to ssize_t to hold the
- * 	number found.
- * @returns Malloced array of pointers to devices devices or NULL if
- *	none were found. The returned array is terminated with a NULL
- * 	entry.
- */
-libusb_device **find_devs_by_vend_prod(libusb_context *ctx, uint16_t vendor, uint16_t product, ssize_t *num_devs_found)
-{
-	libusb_device ** devices = NULL;
-	libusb_device ** found = NULL;
-	struct libusb_device_descriptor desc;
-	ssize_t num_devices = 0;
-	ssize_t num_found=0;
-	int usb_err;
-	ssize_t i;
-
-	if((num_devices = libusb_get_device_list(ctx, &devices))<0)
-		die_usb(num_devices, "Unable to enumerate devices");
-	if(!(found = (libusb_device **)malloc(sizeof(libusb_device*)*(num_devices+1))))
-		die_std("Failed to malloc device array");
-	for(i=0;i<num_devices;i++)
-	{
-		if((usb_err = libusb_get_device_descriptor(devices[i], &desc)))
-			die_usb(usb_err, "Unable to get device descriptor");
-		if(desc.idVendor == vendor && desc.idProduct == product)
-			found[num_found++] = devices[i];
-		else
-			libusb_unref_device(devices[i]);
-	}
-	libusb_free_device_list(devices, false);
-	found[num_found] = NULL;
-	if(num_devs_found)
-		*num_devs_found = num_found;
-	if(num_found)
-		return found;
-	free(found);
-	return NULL;
-}
-
-/**
- * Unrefferences and frees a array of device pointers.
- * @param devs Array of devices to free. This should be terminated with
- * 	NULL. A NULL value is allowed here.
- */
-void free_devs(libusb_device **devs)
-{
-	libusb_device **ptr;
-
-	if(!devs)
-		return;
-	for(ptr=devs;*ptr;ptr++)
-		libusb_unref_device(*ptr);
-	free(devs);
-}
 
 /**
  * Get current switch state of device.
