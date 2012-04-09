@@ -33,7 +33,7 @@ usb_bus_addr_t parse_bus_addr(const char *str)
 	if(*end != ':')
 		die("Bus is not followed by a colen (was '%c').", *end);
 	end++;
-	l = strtol(str, &end, 0);
+	l = strtol(end, &end, 0);
 	if(l < 0)
 		die("Address is negative (was %ld).", l);
 	if(l > 0xFF)
