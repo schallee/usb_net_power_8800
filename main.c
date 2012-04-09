@@ -1,8 +1,10 @@
 #include <libusb-1.0/libusb.h>
 #include <stdbool.h>
 #include <inttypes.h>
-#include <string.h>
+#include <strings.h>
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 #include "power.h"
 #include "usb.h"
 #include "debug.h"
@@ -11,75 +13,82 @@
 #define VENDOR	0x067b
 #define PRODUCT	0x2303
 
+typedef enum 
+{
+	on, off, status
+} run_mode_t;
+
+static void print_state(libusb_device_handle *dev_handle)
+{
+	libusb_device *dev;
+	bool state;
+
+	dev = libusb_get_device(dev_handle);
+	state = get_state(dev_handle);
+
+	printf("%03o:%03o %s\n",
+		libusb_get_bus_number(dev),
+		libusb_get_device_address(dev),
+		state ? "on" : "off");
+}
+
 int main(int argc, const char **argv)
 {
-	libusb_context *ctx = NULL;
+	run_mode_t mode;
 	int usb_err;
-	ssize_t num_devs;
-	libusb_device **devs = NULL;
-	libusb_device **dev_ptr = NULL;
-	libusb_device_handle *dev_handle = NULL;
-	bool kernel_was_active = false;
-	uint8_t bus;
-	uint8_t addr;
+	libusb_context *ctx;
+	libusb_device_handle **dev_handles;
+	const char **bus_addr_strs;
+	ssize_t num;
 
-#	ifdef DEBUG
-		enable_debug();
-#	endif
-
-	debug("argc=%d", argc);
-	if((usb_err = libusb_init(&ctx)))
-		die_usb(usb_err, "Unable to initialize context");
-	debug("usb_err=%d, ctx=0x%0" PRIxPTR, usb_err, (intptr_t)ctx);
-	libusb_set_debug(ctx, 3);
-
-	if(!(devs = find_devs_by_vend_prod(ctx, VENDOR, PRODUCT, &num_devs)))
-		die("No devices found.");
-
-	debug("Found %ld devices", (long int)num_devs);
-
-	for(dev_ptr=devs;*dev_ptr;dev_ptr++)
-	{
-		bus = libusb_get_bus_number(*dev_ptr);
-		addr = libusb_get_device_address(*dev_ptr);
-		debug("bus=%02x addr=%02x", bus, addr);
-		if((usb_err=libusb_open(*dev_ptr, &dev_handle)))
-			die_usb(usb_err, "Unable to open device %02x:%02x", bus, addr);
-		switch((usb_err=libusb_kernel_driver_active(dev_handle, 0)))
-		{
-			case 0:
-				debug("\tNo kernel driver active.");
-				break;
-			case 1:
-				debug("\tKernel driver active.");
-				kernel_was_active = true;
-				if((usb_err = libusb_detach_kernel_driver(dev_handle, 0)))
-					die_usb(usb_err, "Unable to detach kernel driver for %02x:%02x", bus, addr);
-				break;
-			default:
-				die_usb(usb_err, "Unable to determine if kernel driver is active for %02x:%02x.", bus, addr);
-		}
-
-		if(is_on(dev_handle))
-		{
-			debug("\ton");
-			if(argc == 2 && !strcmp(argv[1], "off"))
-				turn_off(dev_handle);
-		}
+	if(argc == 1)
+	{	// show all 
+		mode = status;
+		num = 0;
+		bus_addr_strs = &(argv[1]);
+	}
+	else
+	{	// at least 1 arg
+		bus_addr_strs = &(argv[2]);
+		num = argc - 2;
+		if(!strcasecmp(argv[1], "on"))
+			mode = on;
+		else if(!strcasecmp(argv[1], "off"))
+			mode = off;
+		else if(!strcasecmp(argv[1], "status"))
+			mode = status;
 		else
 		{
-			debug("\toff");
-			if(argc == 2 && !strcmp(argv[1], "on"))
-				turn_on(dev_handle);
+			mode = status;
+			bus_addr_strs = &(argv[1]);
+			num = 1;
 		}
-
-		if(kernel_was_active && (usb_err=libusb_attach_kernel_driver(dev_handle, 0)))
-				die_usb(usb_err, "Unable to reattach kernel driver for %02x:%02x", bus, addr);
-		libusb_close(dev_handle);
 	}
 
-	free_devs(devs);
+	if((usb_err = libusb_init(&ctx)))
+		die_usb(usb_err, "Unable to intialize libusb context");
+	libusb_set_debug(ctx, 3);
 
+	if(num)
+		dev_handles = find_dev_handles_by_bus_addr_strs_vend_prod(ctx, VENDOR, PRODUCT, bus_addr_strs, num);
+	else
+		dev_handles = find_dev_handles_by_vend_prod(ctx, VENDOR, PRODUCT, &num);
+
+	switch(mode)
+	{
+		case on:
+			dev_handles_apply(dev_handles, turn_on);
+			break;
+		case off:
+			dev_handles_apply(dev_handles, turn_off);
+			break;
+		case status:
+			dev_handles_apply(dev_handles, print_state);
+			break;
+		default:
+			die("Unknown value for mode %d", (int)mode);
+	}
+
+	dev_handles_close(dev_handles);
 	libusb_exit(ctx);
-	return EXIT_SUCCESS;
 }
