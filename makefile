@@ -6,12 +6,12 @@ CFLAGS+=-std=c99
 LDLIBS=-lusb-1.0
 CSOURCES:=$(wildcard *.c)
 OBJECTS:=$(CSOURCES:.c=.o)
-TARGETS=power_ctl
+TARGETS=pwrctl
 
 .PHONY: all
 all: $(TARGETS)
 
-power_ctl: $(OBJECTS)
+pwrctl: $(OBJECTS)
 	$(CC) $(LDFLAGS)-o $@ $^ $(LDLIBS)
 
 .PHONY: clean
