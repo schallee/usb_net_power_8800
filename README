@@ -1,0 +1,4 @@
+A simple tool to use the USB Net Power 8800 in Linux.
+
+USB access is done through libusb so porting to other unixes should be
+fairly easy.
